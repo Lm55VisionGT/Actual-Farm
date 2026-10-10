@@ -1,0 +1,170 @@
+-- Carrega a biblioteca Rayfield
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+
+-- Serviços do Roblox
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+
+-- Configurações de Posição e Velocidade
+local A = Vector3.new(-3743, 18, -6409)
+local B = Vector3.new(-3292, 21, 2070)
+
+local velocidade = 50
+local destino = B
+local conexao = nil
+local conexaoNoclip = nil
+
+-- Função para encontrar o veículo ou o personagem
+local function getTargetPart()
+	local char = player.Character
+	if not char then return nil end
+	
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.SeatPart then
+		local seat = humanoid.SeatPart
+		local vehicle = seat.Parent
+		if vehicle:IsA("Model") then
+			return vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart") or seat
+		else
+			return seat
+		end
+	else
+		return char:FindFirstChild("HumanoidRootPart")
+	end
+end
+
+-- Função de Noclip (Apenas para o Player)
+local function ativarNoclip()
+	if conexaoNoclip then conexaoNoclip:Disconnect() end
+	
+	conexaoNoclip = RunService.Stepped:Connect(function()
+		local char = player.Character
+		if not char then return end
+		
+		-- Desativa a colisão apenas das peças do personagem
+		for _, p in ipairs(char:GetDescendants()) do
+			if p:IsA("BasePart") then
+				p.CanCollide = false
+			end
+		end
+	end)
+end
+
+local function desativarNoclip()
+	if conexaoNoclip then
+		conexaoNoclip:Disconnect()
+		conexaoNoclip = nil
+	end
+end
+
+-- Parar o movimento
+local function parar()
+	desativarNoclip()
+	if conexao then
+		conexao:Disconnect()
+		conexao = nil
+	end
+end
+
+-- Iniciar o movimento
+local function iniciar()
+	parar()
+	ativarNoclip()
+
+	local target = getTargetPart()
+	if target then
+		local posAtual = target.Position
+		if target.Parent and target.Parent:IsA("Model") and target.Parent.PrimaryPart then
+			posAtual = target.Parent.PrimaryPart.Position
+		end
+		
+		local pertoDeA = (posAtual - A).Magnitude < (posAtual - B).Magnitude
+		destino = pertoDeA and B or A
+	end
+
+	conexao = RunService.Heartbeat:Connect(function(dt)
+		local target = getTargetPart()
+		if not target then return end
+
+		local modeloCarro = nil
+		local parteMovimento = target
+		if target.Parent and target.Parent:IsA("Model") and target.Parent.PrimaryPart then
+			modeloCarro = target.Parent
+			parteMovimento = modeloCarro.PrimaryPart
+		end
+
+		local falta = destino - parteMovimento.Position
+		local distancia = falta.Magnitude
+		local passo = velocidade * dt
+
+		if distancia <= passo then
+			local novoCFrame = CFrame.new(destino)
+			if modeloCarro then
+				modeloCarro:SetPrimaryPartCFrame(novoCFrame)
+			else
+				parteMovimento.CFrame = novoCFrame
+			end
+			destino = (destino == B) and A or B
+		else
+			local direcao = falta.Unit
+			local velocidadeVetorial = direcao * velocidade
+			
+			if modeloCarro then
+				parteMovimento.AssemblyLinearVelocity = Vector3.new(velocidadeVetorial.X, 0, velocidadeVetorial.Z)
+				parteMovimento.AssemblyAngularVelocity = Vector3.zero
+				
+				local plano = Vector3.new(direcao.X, 0, direcao.Z)
+				if plano.Magnitude > 0.01 then
+					local posAtual = parteMovimento.Position
+					parteMovimento.CFrame = CFrame.lookAt(posAtual, posAtual + plano)
+				end
+			else
+				parteMovimento.AssemblyLinearVelocity = velocidadeVetorial
+				local plano = Vector3.new(direcao.X, 0, direcao.Z)
+				if plano.Magnitude > 0.01 then
+					local posAtual = parteMovimento.Position
+					parteMovimento.CFrame = CFrame.lookAt(posAtual, posAtual + plano)
+				end
+			end
+		end
+	end)
+end
+
+-- Se o personagem renascer/morrer, desliga
+player.CharacterAdded:Connect(parar)
+
+-- ===== INTERFACE RAYFIELD =====
+
+local window = Rayfield:CreateWindow({
+    name = "GT+ Hub",
+    subtitle = "Auto Farm for YSO",
+    sidebarLayout = true,
+})
+
+local tab = window:CreateTab({ name = "Home", icon = 93364949241311 })
+
+tab:CreateToggle({
+    name = "Auto Farm",
+    CurrentValue = false,
+    Flag = "FarmToggle",
+    Callback = function(Value)
+        if Value then
+            iniciar()
+        else
+            parar()
+        end
+    end,
+})
+
+tab:CreateSlider({
+    name = "Velocidade",
+    Range = {10, 300},
+    Increment = 1,
+    Suffix = " Studs/s",
+    CurrentValue = 50,
+    Flag = "VelocidadeSlider",
+    Callback = function(Value)
+        velocidade = Value
+    end,
+})
